@@ -1,8 +1,29 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
+function getAuthToken(req) {
+  try {
+    const tokenCookie = req.cookies?.get('mylogintoken')?.value;
+    if (!tokenCookie) {
+      return null;
+    }
+    return JSON.parse(tokenCookie);
+  } catch (error) {
+    console.error("Failed to parse auth token:", error);
+    return null;
+  }
+}
+
 export async function GET(req) {
   try {
+    const user = getAuthToken(req);
+    if (!user) {
+      return NextResponse.json(
+        { message: "Unauthorized: Authentication required" },
+        { status: 401 }
+      );
+    }
+
     const products = await prisma.product.findMany({
       include: {
         category: true,
@@ -20,7 +41,7 @@ export async function GET(req) {
   } catch (error) {
     console.error("Get Products Error:", error);
     return NextResponse.json(
-      { message: error.message || "Something went wrong" },
+      { message: error.message || "Failed to fetch products" },
       { status: 500 }
     );
   }
@@ -28,6 +49,14 @@ export async function GET(req) {
 
 export async function DELETE(req) {
   try {
+    const user = getAuthToken(req);
+    if (!user) {
+      return NextResponse.json(
+        { message: "Unauthorized: Authentication required" },
+        { status: 401 }
+      );
+    }
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
@@ -65,7 +94,7 @@ export async function DELETE(req) {
   } catch (error) {
     console.error("Delete Product Error:", error);
     return NextResponse.json(
-      { message: error.message || "Something went wrong" },
+      { message: error.message || "Failed to delete product" },
       { status: 500 }
     );
   }

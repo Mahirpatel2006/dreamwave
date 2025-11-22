@@ -1,8 +1,29 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
+function getAuthToken(req) {
+  try {
+    const tokenCookie = req.cookies?.get("mylogintoken")?.value;
+    if (!tokenCookie) {
+      return null;
+    }
+    return JSON.parse(tokenCookie);
+  } catch (error) {
+    console.error("Failed to parse auth token:", error);
+    return null;
+  }
+}
+
 export async function GET(req) {
   try {
+    const user = getAuthToken(req);
+    if (!user) {
+      return NextResponse.json(
+        { message: "Unauthorized: Authentication required" },
+        { status: 401 }
+      );
+    }
+
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
 
@@ -35,7 +56,7 @@ export async function GET(req) {
   } catch (error) {
     console.error("Get Transfers Error:", error);
     return NextResponse.json(
-      { message: error.message || "Something went wrong" },
+      { message: error.message || "Failed to fetch transfers" },
       { status: 500 }
     );
   }
@@ -43,6 +64,14 @@ export async function GET(req) {
 
 export async function POST(req) {
   try {
+    const user = getAuthToken(req);
+    if (!user) {
+      return NextResponse.json(
+        { message: "Unauthorized: Authentication required" },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const { fromWarehouseId, toWarehouseId, items } = body;
 
@@ -110,7 +139,7 @@ export async function POST(req) {
   } catch (error) {
     console.error("Create Transfer Error:", error);
     return NextResponse.json(
-      { message: error.message || "Something went wrong" },
+      { message: error.message || "Failed to create transfer" },
       { status: 500 }
     );
   }
@@ -118,6 +147,14 @@ export async function POST(req) {
 
 export async function PATCH(req) {
   try {
+    const user = getAuthToken(req);
+    if (!user) {
+      return NextResponse.json(
+        { message: "Unauthorized: Authentication required" },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const { transferId, status, items } = body;
 
@@ -248,7 +285,7 @@ export async function PATCH(req) {
   } catch (error) {
     console.error("Update Transfer Error:", error);
     return NextResponse.json(
-      { message: error.message || "Something went wrong" },
+      { message: error.message || "Failed to update transfer" },
       { status: 500 }
     );
   }

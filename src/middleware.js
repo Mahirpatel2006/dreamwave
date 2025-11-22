@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 
 export function middleware(request) {
   const path = request.nextUrl.pathname;
-  const isPublicPath = path === '/login' || path === '/register';
+  const isApiRoute = path.startsWith('/api/');
+  const isPublicPath = path === '/login' || path === '/register' || path === '/api/login' || path === '/api/register';
 
   const tokenCookie = request.cookies.get('mylogintoken')?.value || "";
 
@@ -17,14 +18,29 @@ export function middleware(request) {
   }
 
   if (isPublicPath && tokenCookie) {
+    if (isApiRoute) {
+      return NextResponse.next();
+    }
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
   if (!isPublicPath && !tokenCookie) {
+    if (isApiRoute) {
+      return NextResponse.json(
+        { message: 'Unauthorized: No authentication token provided' },
+        { status: 401 }
+      );
+    }
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
   if (path === '/product' && userRole !== 'manager') {
+    if (isApiRoute) {
+      return NextResponse.json(
+        { message: 'Forbidden: You do not have permission to access this resource' },
+        { status: 403 }
+      );
+    }
     return NextResponse.redirect(new URL('/access-denied', request.url));
   }
 
@@ -46,6 +62,6 @@ export const config = {
     "/adjustments",
     "/moves",
     "/settings",
-    
+    "/api/:path*",
   ],
 };

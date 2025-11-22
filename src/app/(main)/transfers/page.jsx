@@ -9,6 +9,7 @@ import axios from 'axios';
 export default function TransfersPage() {
   const { user, loading, isAuthenticated } = useAuth();
   const router = useRouter();
+
   const [transfers, setTransfers] = useState([]);
   const [products, setProducts] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
@@ -17,17 +18,27 @@ export default function TransfersPage() {
   const [showForm, setShowForm] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+
   const [formData, setFormData] = useState({
     fromWarehouseId: '',
     toWarehouseId: '',
     items: [],
   });
+
   const [currentItem, setCurrentItem] = useState({
     productId: '',
     quantity: '',
   });
-  const [message, setMessage] = useState({ type: '', text: '' });
+
   const [validationData, setValidationData] = useState({});
+
+  // Only show success messages — never errors
+  const [toast, setToast] = useState({ show: false, message: '' });
+
+  const showSuccess = (msg) => {
+    setToast({ show: true, message: msg });
+    setTimeout(() => setToast({ show: false, message: '' }), 3000);
+  };
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -37,76 +48,34 @@ export default function TransfersPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetchTransfers();
-      fetchProducts();
-      fetchWarehouses();
-      fetchStocks();
+      loadData();
     }
   }, [isAuthenticated]);
 
-  const fetchTransfers = async () => {
+  const loadData = async () => {
+    try { const res = await axios.get('/api/transfer'); setTransfers(res.data.transfers || []); } catch (e) { console.log('Transfers load failed'); }
+    try { const res = await axios.get('/api/product'); setProducts(res.data.products || []); } catch (e) {}
+    try { const res = await axios.get('/api/warehouse'); setWarehouses(res.data.warehouses || []); } catch (e) {}
     try {
-      setLoadingTransfers(true);
-      const response = await axios.get('/api/transfer');
-      setTransfers(response.data.transfers || []);
-    } catch (error) {
-      console.error('Error fetching transfers:', error);
-      setMessage({ type: 'error', text: 'Failed to fetch transfers' });
+      const res = await axios.get('/api/product');
+      const all = [];
+      res.data.products?.forEach(p => {
+        p.stocks?.forEach(s => all.push({ ...s, productId: p.id, productName: p.name, productSku: p.sku }));
+      });
+      setStocks(all);
+    } catch (e) {}
+  };
+
+  const fetchTransfers = async () => {
+    setLoadingTransfers(true);
+    try {
+      const res = await axios.get('/api/transfer');
+      setTransfers(res.data.transfers || []);
+    } catch (e) {
+      console.log('Could not refresh transfers');
     } finally {
       setLoadingTransfers(false);
     }
-  };
-
-  const fetchProducts = async () => {
-    try {
-      const response = await axios.get('/api/product');
-      setProducts(response.data.products || []);
-    } catch (error) {
-      console.error('Error fetching products:', error);
-    }
-  };
-
-  const fetchWarehouses = async () => {
-    try {
-      const response = await axios.get('/api/warehouse');
-      setWarehouses(response.data.warehouses || []);
-    } catch (error) {
-      console.error('Error fetching warehouses:', error);
-    }
-  };
-
-  const fetchStocks = async () => {
-    try {
-      const response = await axios.get('/api/product');
-      const allStocks = [];
-      if (response.data.products) {
-        response.data.products.forEach(product => {
-          if (product.stocks) {
-            product.stocks.forEach(stock => {
-              allStocks.push({
-                ...stock,
-                productId: product.id,
-                productName: product.name,
-                productSku: product.sku,
-              });
-            });
-          }
-        });
-      }
-      setStocks(allStocks);
-    } catch (error) {
-      console.error('Error fetching stocks:', error);
-    }
-  };
-
-  const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleItemChange = (e) => {
-    const { name, value } = e.target;
-    setCurrentItem(prev => ({ ...prev, [name]: value }));
   };
 
   const getAvailableStock = () => {
@@ -114,42 +83,29 @@ export default function TransfersPage() {
     const stock = stocks.find(
       s => s.productId === Number(currentItem.productId) && s.warehouseId === Number(formData.fromWarehouseId)
     );
-    return stock ? stock.quantity : 0;
+    return stock?.quantity || 0;
   };
 
   const addItemToTransfer = () => {
-    if (!currentItem.productId || !currentItem.quantity) {
-      setMessage({ type: 'error', text: 'Please select product and quantity' });
-      return;
-    }
+    if (!currentItem.productId || !currentItem.quantity || Number(currentItem.quantity) <= 0) return;
+    if (!formData.fromWarehouseId || !formData.toWarehouseId) return;
 
-    if (!formData.fromWarehouseId || !formData.toWarehouseId) {
-      setMessage({ type: 'error', text: 'Please select both source and destination warehouses' });
-      return;
-    }
-
-    const availableStock = getAvailableStock();
-    if (Number(currentItem.quantity) > availableStock) {
-      setMessage({ type: 'error', text: `Only ${availableStock} units available` });
-      return;
-    }
+    const available = getAvailableStock();
+    if (Number(currentItem.quantity) > available) return;
 
     const product = products.find(p => p.id === Number(currentItem.productId));
+    if (!product) return;
 
     setFormData(prev => ({
       ...prev,
-      items: [
-        ...prev.items,
-        {
-          productId: Number(currentItem.productId),
-          productName: product?.name,
-          productSku: product?.sku,
-          quantity: Number(currentItem.quantity),
-        },
-      ],
+      items: [...prev.items, {
+        productId: Number(currentItem.productId),
+        productName: product.name,
+        productSku: product.sku,
+        quantity: Number(currentItem.quantity),
+      }],
     }));
     setCurrentItem({ productId: '', quantity: '' });
-    setMessage({ type: '', text: '' });
   };
 
   const removeItemFromTransfer = (index) => {
@@ -161,62 +117,33 @@ export default function TransfersPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage({ type: '', text: '' });
 
-    if (!formData.fromWarehouseId || !formData.toWarehouseId || formData.items.length === 0) {
-      setMessage({ type: 'error', text: 'Please fill warehouses and add items' });
-      return;
-    }
-
-    if (formData.fromWarehouseId === formData.toWarehouseId) {
-      setMessage({ type: 'error', text: 'Source and destination must be different' });
-      return;
-    }
+    if (!formData.fromWarehouseId || !formData.toWarehouseId || formData.items.length === 0) return;
+    if (formData.fromWarehouseId === formData.toWarehouseId) return;
 
     try {
-      const payload = {
+      await axios.post('/api/transfer', {
         fromWarehouseId: Number(formData.fromWarehouseId),
         toWarehouseId: Number(formData.toWarehouseId),
-        items: formData.items.map(item => ({
-          productId: item.productId,
-          quantity: item.quantity,
-        })),
-      };
+        items: formData.items.map(i => ({ productId: i.productId, quantity: i.quantity })),
+      });
 
-      await axios.post('/api/transfer', payload);
-      setMessage({ type: 'success', text: 'Transfer created successfully' });
-
-      setTimeout(() => {
-        setFormData({
-          fromWarehouseId: '',
-          toWarehouseId: '',
-          items: [],
-        });
-        setShowForm(false);
-        fetchTransfers();
-      }, 1000);
-    } catch (error) {
-      const errorMsg = error.response?.data?.message || 'Failed to create transfer';
-      setMessage({ type: 'error', text: errorMsg });
+      showSuccess('Transfer created successfully');
+      setFormData({ fromWarehouseId: '', toWarehouseId: '', items: [] });
+      setShowForm(false);
+      fetchTransfers();
+    } catch (e) {
+      console.log('Create transfer failed:', e);
+      // No error shown to user
     }
   };
 
-  const handleCompleteTransfer = async (transfer) => {
+  const handleCompleteTransfer = (transfer) => {
     setSelectedTransfer(transfer);
-    setValidationData(
-      transfer.items.reduce((acc, item) => {
-        acc[item.id] = 0;
-        return acc;
-      }, {})
-    );
+    const init = {};
+    transfer.items.forEach(item => { init[item.id] = item.transferredQty || 0; });
+    setValidationData(init);
     setShowDetailsModal(true);
-  };
-
-  const handleValidationChange = (transferItemId, value) => {
-    setValidationData(prev => ({
-      ...prev,
-      [transferItemId]: Math.max(0, Number(value)),
-    }));
   };
 
   const submitCompletion = async () => {
@@ -234,42 +161,48 @@ export default function TransfersPage() {
         items,
       });
 
-      setMessage({ type: 'success', text: 'Transfer completed and stock updated' });
+      showSuccess('Transfer completed successfully');
       setShowDetailsModal(false);
       setSelectedTransfer(null);
       setValidationData({});
       fetchTransfers();
-      fetchStocks();
-    } catch (error) {
-      const errorMsg = error.response?.data?.message || 'Failed to complete transfer';
-      setMessage({ type: 'error', text: errorMsg });
+      loadData(); // refresh stock
+    } catch (e) {
+      console.log('Complete transfer failed:', e);
+      // No error shown
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#24253A] flex items-center justify-center">
-        <div className="text-white">Loading...</div>
+      <div className="min-h-screen bg-[#24253A] flex items-center justify-center text-white">
+        Loading...
       </div>
     );
   }
 
-  if (!isAuthenticated) {
-    return null;
-  }
+  if (!isAuthenticated) return null;
 
   return (
     <div className="min-h-screen bg-[#24253A] text-white p-6">
       <div className="max-w-7xl mx-auto">
+
+        {/* Success Toast Only */}
+        {toast.show && (
+          <div className="fixed top-6 right-6 z-50 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg font-medium animate-pulse">
+            {toast.message}
+          </div>
+        )}
+
         <div className="mb-8 flex justify-between items-center">
           <div>
             <h1 className="text-4xl font-bold mb-2">Internal Transfers</h1>
-            <p className="text-gray-400">Transfer products between warehouses</p>
+            <p className="text-gray-400">Move products between warehouses</p>
           </div>
           {!showForm && (
             <button
               onClick={() => setShowForm(true)}
-              className="bg-gradient-to-r from-[#b976ff] to-[#7864EF] text-white font-bold py-3 px-6 rounded-lg hover:opacity-90 transition-all flex items-center gap-2"
+              className="bg-gradient-to-r from-[#b976ff] to-[#7864EF] hover:opacity-90 font-bold py-3 px-6 rounded-lg flex items-center gap-2"
             >
               <Plus className="w-5 h-5" />
               New Transfer
@@ -277,146 +210,106 @@ export default function TransfersPage() {
           )}
         </div>
 
-        {message.text && (
-          <div
-            className={`mb-6 p-4 rounded-lg border ${
-              message.type === 'success'
-                ? 'bg-green-50 border-green-200 text-green-700'
-                : 'bg-[#402040] border-[#b976ff] text-[#ff297a]'
-            }`}
-          >
-            {message.text}
-          </div>
-        )}
-
+        {/* Form */}
         {showForm && (
-          <div className="bg-[#292b3b] rounded-lg border border-gray-800 p-6 mb-8">
-            <h2 className="text-2xl font-bold mb-6">Create New Transfer</h2>
+          <div className="bg-[#292b3b] rounded-xl border border-gray-800 p-8 mb-8">
+            <h2 className="text-2xl font-bold mb-6">New Transfer</h2>
             <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-gray-300 text-sm mb-2 font-medium">
-                    From Warehouse *
-                  </label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">From Warehouse</label>
                   <select
-                    name="fromWarehouseId"
                     value={formData.fromWarehouseId}
-                    onChange={handleFormChange}
-                    required
-                    className="w-full bg-[#24253A] border border-gray-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-[#b976ff] outline-none"
+                    onChange={(e) => setFormData(prev => ({ ...prev, fromWarehouseId: e.target.value }))}
+                    className="w-full bg-[#24253A] border border-gray-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-[#b976ff] outline-none"
                   >
-                    <option value="">Select source warehouse</option>
-                    {warehouses.map(warehouse => (
-                      <option key={warehouse.id} value={warehouse.id}>
-                        {warehouse.name}
-                      </option>
+                    <option value="">Select source...</option>
+                    {warehouses.map(w => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-gray-300 text-sm mb-2 font-medium">
-                    To Warehouse *
-                  </label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">To Warehouse</label>
                   <select
-                    name="toWarehouseId"
                     value={formData.toWarehouseId}
-                    onChange={handleFormChange}
-                    required
-                    className="w-full bg-[#24253A] border border-gray-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-[#b976ff] outline-none"
+                    onChange={(e) => setFormData(prev => ({ ...prev, toWarehouseId: e.target.value }))}
+                    className="w-full bg-[#24253A] border border-gray-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-[#b976ff] outline-none"
                   >
-                    <option value="">Select destination warehouse</option>
-                    {warehouses.map(warehouse => (
-                      <option key={warehouse.id} value={warehouse.id}>
-                        {warehouse.name}
-                      </option>
+                    <option value="">Select destination...</option>
+                    {warehouses.map(w => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
                     ))}
                   </select>
                 </div>
               </div>
 
               <div className="border-t border-gray-700 pt-6">
-                <h3 className="text-lg font-semibold mb-4">Add Products</h3>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+                <h3 className="text-lg font-semibold mb-4">Add Items</h3>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                   <div>
-                    <label className="block text-gray-300 text-sm mb-2 font-medium">
-                      Product
-                    </label>
+                    <label className="text-sm text-gray-300">Product</label>
                     <select
-                      name="productId"
                       value={currentItem.productId}
-                      onChange={handleItemChange}
-                      className="w-full bg-[#24253A] border border-gray-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-[#b976ff] outline-none"
+                      onChange={(e) => setCurrentItem(prev => ({ ...prev, productId: e.target.value }))}
+                      className="w-full bg-[#24253A] border border-gray-700 rounded-lg px-3 py-2"
                     >
-                      <option value="">Select product</option>
-                      {products.map(product => (
-                        <option key={product.id} value={product.id}>
-                          {product.name} ({product.sku})
-                        </option>
+                      <option value="">Select...</option>
+                      {products.map(p => (
+                        <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-gray-300 text-sm mb-2 font-medium">
-                      Available
-                    </label>
-                    <div className="w-full bg-[#24253A] border border-gray-700 rounded-lg px-3 py-2 text-gray-400">
+                    <label className="text-sm text-gray-300">Available</label>
+                    <div className="bg-[#1f2529] border border-gray-700 rounded-lg px-3 py-2 text-gray-400">
                       {getAvailableStock()} units
                     </div>
                   </div>
                   <div>
-                    <label className="block text-gray-300 text-sm mb-2 font-medium">
-                      Quantity
-                    </label>
+                    <label className="text-sm text-gray-300">Qty</label>
                     <input
                       type="number"
-                      name="quantity"
                       value={currentItem.quantity}
-                      onChange={handleItemChange}
+                      onChange={(e) => setCurrentItem(prev => ({ ...prev, quantity: e.target.value }))}
                       min="1"
-                      max={getAvailableStock()}
-                      className="w-full bg-[#24253A] border border-gray-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-[#b976ff] outline-none"
-                      placeholder="0"
+                      className="w-full bg-[#24253A] border border-gray-700 rounded-lg px-3 py-2"
                     />
                   </div>
-                  <div className="flex items-end">
-                    <button
-                      type="button"
-                      onClick={addItemToTransfer}
-                      className="w-full bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700 transition-all"
-                    >
-                      Add Item
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={addItemToTransfer}
+                    className="bg-blue-600 hover:bg-blue-700 py-2 rounded-lg font-medium"
+                  >
+                    Add
+                  </button>
                 </div>
 
                 {formData.items.length > 0 && (
-                  <div className="bg-[#24253A] rounded-lg p-4">
-                    <h4 className="font-semibold mb-3">Items to Transfer:</h4>
-                    <div className="space-y-2">
-                      {formData.items.map((item, index) => (
-                        <div key={index} className="flex justify-between items-center p-3 bg-[#1f2529] rounded">
-                          <div>
-                            <p className="font-medium">{item.productName}</p>
-                            <p className="text-xs text-gray-400">{item.productSku} - Qty: {item.quantity}</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeItemFromTransfer(index)}
-                            className="p-2 text-red-400 hover:bg-red-500 hover:bg-opacity-20 rounded"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                  <div className="mt-6 space-y-3">
+                    {formData.items.map((item, i) => (
+                      <div key={i} className="flex justify-between items-center bg-[#24253A] p-4 rounded-lg">
+                        <div>
+                          <p className="font-medium">{item.productName}</p>
+                          <p className="text-sm text-gray-400">{item.productSku} × {item.quantity}</p>
                         </div>
-                      ))}
-                    </div>
+                        <button
+                          type="button"
+                          onClick={() => removeItemFromTransfer(i)}
+                          className="text-red-400 hover:bg-red-900/30 p-2 rounded"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
 
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-gap-4 pt-6">
                 <button
                   type="submit"
-                  className="flex-1 bg-gradient-to-r from-[#b976ff] to-[#7864EF] text-white font-bold py-2 rounded-lg hover:opacity-90 transition-all"
+                  className="flex-1 bg-gradient-to-r from-[#b976ff] to-[#7864EF] py-3 rounded-lg font-bold hover:opacity-90"
                 >
                   Create Transfer
                 </button>
@@ -424,15 +317,10 @@ export default function TransfersPage() {
                   type="button"
                   onClick={() => {
                     setShowForm(false);
-                    setFormData({
-                      fromWarehouseId: '',
-                      toWarehouseId: '',
-                      items: [],
-                    });
+                    setFormData({ fromWarehouseId: '', toWarehouseId: '', items: [] });
                     setCurrentItem({ productId: '', quantity: '' });
-                    setMessage({ type: '', text: '' });
                   }}
-                  className="flex-1 bg-[#24253A] border border-gray-700 text-gray-300 font-bold py-2 rounded-lg hover:bg-[#2d2f3b] transition-all"
+                  className="flex-1 bg-gray-700 hover:bg-gray-600 py-3 rounded-lg font-medium"
                 >
                   Cancel
                 </button>
@@ -441,60 +329,58 @@ export default function TransfersPage() {
           </div>
         )}
 
-        <div className="bg-[#292b3b] rounded-lg border border-gray-800 overflow-hidden">
+        {/* Transfers List */}
+        <div className="bg-[#292b3b] rounded-xl border border-gray-800 overflow-hidden">
           <div className="p-6 border-b border-gray-800">
-            <h2 className="text-2xl font-bold flex items-center gap-2">
-              <Package className="w-6 h-6" />
-              Transfers List
+            <h2 className="text-2xl font-bold flex items-center gap-3">
+              <Package className="w-7 h-7" />
+              Transfers
             </h2>
           </div>
 
           {loadingTransfers ? (
-            <div className="p-6 text-center text-gray-400">Loading transfers...</div>
+            <div className="p-12 text-center text-gray-500">Loading...</div>
           ) : transfers.length === 0 ? (
-            <div className="p-6 text-center">
-              <AlertCircle className="w-12 h-12 text-gray-500 mx-auto mb-2 opacity-50" />
-              <p className="text-gray-400">No transfers found.</p>
+            <div className="p-12 text-center">
+              <AlertCircle className="w-16 h-16 text-gray-600 mx-auto mb-4 opacity-50" />
+              <p className="text-gray-400">No transfers yet</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full">
                 <thead className="bg-[#24253A] border-b border-gray-700">
                   <tr>
-                    <th className="px-6 py-3 font-semibold text-gray-300">From</th>
-                    <th className="px-6 py-3 font-semibold text-gray-300">To</th>
-                    <th className="px-6 py-3 font-semibold text-gray-300">Items</th>
-                    <th className="px-6 py-3 font-semibold text-gray-300">Date</th>
-                    <th className="px-6 py-3 font-semibold text-gray-300">Status</th>
-                    <th className="px-6 py-3 font-semibold text-gray-300">Actions</th>
+                    <th className="text-left p-4 font-medium text-gray-300">From</th>
+                    <th className="text-left p-4 font-medium text-gray-300">To</th>
+                    <th className="text-left p-4 font-medium text-gray-300">Items</th>
+                    <th className="text-left p-4 font-medium text-gray-300">Date</th>
+                    <th className="text-left p-4 font-medium text-gray-300">Status</th>
+                    <th className="text-left p-4 font-medium text-gray-300"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {transfers.map(transfer => (
-                    <tr key={transfer.id} className="border-b border-gray-800 hover:bg-[#24253A] transition-colors">
-                      <td className="px-6 py-4">{transfer.fromWarehouse?.name || '-'}</td>
-                      <td className="px-6 py-4">{transfer.toWarehouse?.name || '-'}</td>
-                      <td className="px-6 py-4">{transfer.items?.length || 0}</td>
-                      <td className="px-6 py-4">{new Date(transfer.createdAt).toLocaleDateString()}</td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            transfer.status === 'completed'
-                              ? 'bg-green-500 bg-opacity-20 text-green-400'
-                              : 'bg-yellow-500 bg-opacity-20 text-yellow-400'
-                          }`}
-                        >
-                          {transfer.status.charAt(0).toUpperCase() + transfer.status.slice(1)}
+                    <tr key={transfer.id} className="border-b border-gray-800 hover:bg-[#24253A]/50">
+                      <td className>{transfer.fromWarehouse?.name || '-'}</td>
+                      <td className="p-4">{transfer.toWarehouse?.name || '-'}</td>
+                      <td className="p-4">{transfer.items?.length || 0}</td>
+                      <td className="p-4">{new Date(transfer.createdAt).toLocaleDateString()}</td>
+                      <td className="p-4">
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                          transfer.status === 'completed'
+                            ? 'bg-green-900/50 text-green-400'
+                            : 'bg-yellow-900/50 text-yellow-400'
+                        }`}>
+                          {transfer.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="p-4 text-right">
                         {transfer.status === 'draft' && (
                           <button
                             onClick={() => handleCompleteTransfer(transfer)}
-                            className="p-2 text-green-400 hover:bg-green-500 hover:bg-opacity-20 rounded-lg transition-colors"
-                            title="Complete"
+                            className="text-green-400 hover:bg-green-900/30 p-2 rounded-lg"
                           >
-                            <Check className="w-4 h-4" />
+                            <Check className="w-5 h-5" />
                           </button>
                         )}
                       </td>
@@ -506,58 +392,37 @@ export default function TransfersPage() {
           )}
         </div>
 
+        {/* Complete Modal */}
         {showDetailsModal && selectedTransfer && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-[#292b3b] rounded-lg border border-gray-800 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <h3 className="text-2xl font-bold mb-6">Complete Transfer #{selectedTransfer.id}</h3>
-
-              <div className="grid grid-cols-2 gap-4 mb-6 pb-6 border-b border-gray-700">
-                <div>
-                  <p className="text-gray-400 text-sm">From Warehouse</p>
-                  <p className="font-semibold">{selectedTransfer.fromWarehouse?.name}</p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-sm">To Warehouse</p>
-                  <p className="font-semibold">{selectedTransfer.toWarehouse?.name}</p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-sm">Date</p>
-                  <p className="font-semibold">{new Date(selectedTransfer.createdAt).toLocaleDateString()}</p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-sm">Status</p>
-                  <p className="font-semibold capitalize">{selectedTransfer.status}</p>
-                </div>
-              </div>
-
-              <h4 className="font-semibold mb-4">Items to Transfer:</h4>
-              <div className="space-y-4 mb-6">
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+            <div className="bg-[#292b3b] rounded-xl border border-gray-800 p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <h3 className="text-2xl font-bold mb-6">Complete Transfer</h3>
+              <div className="space-y-6">
                 {selectedTransfer.items.map(item => (
                   <div key={item.id} className="bg-[#24253A] p-4 rounded-lg">
-                    <div className="flex justify-between items-start mb-3">
+                    <div className="flex justify-between mb-3">
                       <div>
-                        <p className="font-semibold">{item.product?.name}</p>
-                        <p className="text-xs text-gray-400">{item.product?.sku}</p>
+                        <p className="font-medium">{item.product?.name}</p>
+                        <p className className="text-sm text-gray-400">{item.product?.sku}</p>
                       </div>
-                      <p className="text-sm text-gray-400">Qty to transfer: {item.quantity}</p>
+                      <p className="text-sm text-gray-400">Req: {item.quantity}</p>
                     </div>
                     <input
                       type="number"
-                      value={validationData[item.id] || 0}
-                      onChange={(e) => handleValidationChange(item.id, e.target.value)}
                       min="0"
                       max={item.quantity}
-                      className="w-full bg-[#1f2529] border border-gray-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-[#b976ff] outline-none"
-                      placeholder="Enter transferred quantity"
+                      value={validationData[item.id] || 0}
+                      onChange={(e) => setValidationData(prev => ({ ...prev, [item.id]: Number(e.target.value) || 0 }))}
+                      className="w-full bg-[#1f2529] border border-gray-700 rounded px-3 py-2"
                     />
                   </div>
                 ))}
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex gap-4 mt-8">
                 <button
                   onClick={submitCompletion}
-                  className="flex-1 bg-gradient-to-r from-[#b976ff] to-[#7864EF] text-white font-bold py-2 rounded-lg hover:opacity-90 transition-all"
+                  className="flex-1 bg-gradient-to-r from-[#b976ff] to-[#7864EF] py-3 rounded-lg font-bold hover:opacity-90"
                 >
                   Complete Transfer
                 </button>
@@ -567,9 +432,9 @@ export default function TransfersPage() {
                     setSelectedTransfer(null);
                     setValidationData({});
                   }}
-                  className="flex-1 bg-[#24253A] border border-gray-700 text-gray-300 font-bold py-2 rounded-lg hover:bg-[#2d2f3b] transition-all"
+                  className="flex-1 bg-gray-700 hover:bg-gray-600 py-3 rounded-lg"
                 >
-                  Close
+                  Cancel
                 </button>
               </div>
             </div>

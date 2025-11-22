@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { AlertCircle, Calendar, Filter, X } from 'lucide-react';
 import axios from 'axios';
 
-export default function HistoryPage() {
+export default function MovesPage() {
   const { user, loading, isAuthenticated } = useAuth();
   const router = useRouter();
   const [transactions, setTransactions] = useState([]);
@@ -271,7 +271,7 @@ export default function HistoryPage() {
     <div className="min-h-screen bg-[#24253A] text-white p-6">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">Transaction History</h1>
+          <h1 className="text-4xl font-bold mb-2">Move History</h1>
           <p className="text-gray-400">View all receipts, deliveries, and warehouse transfers</p>
         </div>
 

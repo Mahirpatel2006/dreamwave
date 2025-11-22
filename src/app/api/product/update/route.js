@@ -1,8 +1,29 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
+function getAuthToken(req) {
+  try {
+    const tokenCookie = req.cookies?.get('mylogintoken')?.value;
+    if (!tokenCookie) {
+      return null;
+    }
+    return JSON.parse(tokenCookie);
+  } catch (error) {
+    console.error("Failed to parse auth token:", error);
+    return null;
+  }
+}
+
 export async function PUT(req) {
   try {
+    const user = getAuthToken(req);
+    if (!user) {
+      return NextResponse.json(
+        { message: "Unauthorized: Authentication required" },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const { id, name, sku, uom, category } = body;
 

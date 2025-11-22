@@ -30,6 +30,7 @@ export async function POST(req) {
     const tokenBody = {
       id: user.id,
       email: user.email,
+      name: user.name,
       role: user.role,
     };
 
